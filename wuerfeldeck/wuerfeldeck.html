@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Würfeldeck">
+<meta name="theme-color" content="#0d0e11">
+<title>Würfeldeck</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --deck-bg: #0a0b0d;
+    --key-top: #2c313a;
+    --key-bottom: #1b1e24;
+    --pip: #f4f6fa;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding-block: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-bottom));
+    padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
+    background: radial-gradient(circle at 50% 0%, #1d2026, #0d0e11 70%);
+    color: #d7dbe2;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  #deck {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: clamp(6px, 1.6vw, 14px);
+    width: min(760px, 100%);
+    padding: clamp(10px, 2.2vw, 20px);
+    border-radius: 20px;
+    background: var(--deck-bg);
+    box-shadow:
+      0 0 0 1px #ffffff12,
+      0 18px 40px #00000099,
+      inset 0 1px 0 #ffffff0d;
+  }
+
+  .key {
+    position: relative;
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: none;
+    border-radius: 14%;
+    background: linear-gradient(180deg, var(--key-top), var(--key-bottom));
+    box-shadow:
+      0 0 0 1px #00000080,
+      inset 0 1px 0 #ffffff1a,
+      0 2px 5px #00000066;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform 90ms ease, filter 90ms ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .key:hover { filter: brightness(1.15); }
+  .key:active { transform: translateY(2px) scale(0.97); filter: brightness(0.9); }
+  .key:focus-visible { outline: 2px solid #6aa9ff; outline-offset: 3px; }
+
+  .face {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 10%;
+    width: 62%;
+    aspect-ratio: 1;
+  }
+
+  .pip {
+    border-radius: 50%;
+    background: transparent;
+  }
+
+  .pip.on {
+    background: var(--pip);
+    box-shadow: 0 0 6px #ffffff55;
+  }
+
+  /* Der Wurf läuft mit leichtem Versatz über das Deck. */
+  #deck.rolling .key {
+    animation: roll 240ms ease-out backwards;
+    animation-delay: var(--delay, 0ms);
+  }
+
+  @keyframes roll {
+    0%   { transform: rotate(-9deg) scale(0.86); }
+    60%  { transform: rotate(4deg) scale(1.03); }
+    100% { transform: rotate(0deg) scale(1); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .key { transition: none; }
+    #deck.rolling .key { animation: none; }
+  }
+
+</style>
+</head>
+<body>
+  <div id="deck"></div>
+<script>
+"use strict";
+/**
+ * Würfeldeck – 15 Tasten im Stream-Deck-Layout (3 Reihen x 5 Slots).
+ *
+ * Beim Laden werden alle 15 Würfel geworfen. Ein Druck auf eine beliebige
+ * Taste wirft alle 15 neu.
+ *
+ * Ausnahme R1S5: zeigt wie jede andere Taste einen Würfel und wird
+ * mitgewürfelt, löst aber selbst keinen Wurf aus. Der Slot ist auf dem
+ * echten Stream Deck als Zurücktaste belegt.
+ *
+ * Kompiliertes Ergebnis von src/main.ts (tsc --target es2017).
+ */
+var ROWS = 3;
+var SLOTS = 5;
+/** Slot ohne auslösende Funktion – auf dem echten Stream Deck die Zurücktaste. */
+var INERT_ID = "R1S5";
+/** Versatz zwischen den Würfeln in Millisekunden, damit der Wurf über das Deck läuft. */
+var STAGGER_MS = 10;
+/** Besetzte Felder im 3x3-Raster der Würfelaugen, von links oben (0) nach rechts unten (8). */
+var PIP_LAYOUT = {
+    1: [4],
+    2: [0, 8],
+    3: [0, 4, 8],
+    4: [0, 2, 6, 8],
+    5: [0, 2, 4, 6, 8],
+    6: [0, 2, 3, 5, 6, 8]
+};
+/**
+ * Ein Zufallsbyte. crypto.getRandomValues ist der gute Weg, fehlt aber in
+ * manchen Kontexten (z. B. beim Öffnen aus der Dateien-App) – dann Math.random.
+ */
+function randomByte() {
+    var source = window.crypto;
+    if (source && typeof source.getRandomValues === "function") {
+        var buffer = new Uint8Array(1);
+        source.getRandomValues(buffer);
+        return buffer[0];
+    }
+    return Math.floor(Math.random() * 256);
+}
+/**
+ * Fairer Wurf: Werte ab 252 werden verworfen, damit die sechs Ergebnisse
+ * exakt gleich wahrscheinlich bleiben (252 = 6 * 42).
+ */
+function rollDie() {
+    var byte;
+    do {
+        byte = randomByte();
+    } while (byte >= 252);
+    return (byte % 6) + 1;
+}
+function pipMarkup(value) {
+    var lit = PIP_LAYOUT[value];
+    var markup = "";
+    for (var cell = 0; cell < 9; cell++) {
+        markup += '<span class="pip' + (lit.indexOf(cell) === -1 ? "" : " on") + '"></span>';
+    }
+    return markup;
+}
+function createKey(row, slot, index) {
+    var id = "R" + row + "S" + slot;
+    var element = document.createElement("button");
+    element.type = "button";
+    element.id = id;
+    element.className = "key";
+    element.style.setProperty("--delay", index * STAGGER_MS + "ms");
+    element.innerHTML = '<span class="face"></span>';
+    if (id === INERT_ID) {
+        element.setAttribute("aria-disabled", "true");
+    }
+    return { id: id, row: row, slot: slot, triggers: id !== INERT_ID, element: element };
+}
+function showDie(key) {
+    var value = rollDie();
+    var face = key.element.querySelector(".face");
+    face.innerHTML = pipMarkup(value);
+    key.element.dataset.value = String(value);
+    key.element.setAttribute("aria-label", key.id + ": Würfel zeigt " + value + (key.triggers ? "" : ", ohne Funktion"));
+}
+/** Wirft alle Würfel neu, inklusive R1S5. */
+function rollAll(keys, deck) {
+    keys.forEach(showDie);
+    deck.classList.remove("rolling");
+    void deck.offsetWidth; // erzwingt Reflow, damit die Animation neu startet
+    deck.classList.add("rolling");
+}
+function buildDeck(container) {
+    var keys = [];
+    var index = 0;
+    for (var row = 1; row <= ROWS; row++) {
+        for (var slot = 1; slot <= SLOTS; slot++) {
+            var key = createKey(row, slot, index);
+            container.appendChild(key.element);
+            keys.push(key);
+            index++;
+        }
+    }
+    keys.forEach(function (key) {
+        if (!key.triggers) {
+            return;
+        }
+        key.element.addEventListener("click", function () {
+            rollAll(keys, container);
+        });
+    });
+    return keys;
+}
+var deck = document.getElementById("deck");
+if (deck !== null) {
+    var keys = buildDeck(deck);
+    rollAll(keys, deck);
+}
+</script>
+</body>
+</html>

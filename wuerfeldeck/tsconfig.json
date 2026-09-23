@@ -1,0 +1,15 @@
+{
+  // Baut src/main.ts nach build/main.js. Der Inhalt wird anschließend
+  // in den <script>-Block von wuerfeldeck.html kopiert, damit die Seite
+  // eine einzelne, offline lauffähige Datei bleibt.
+  "compilerOptions": {
+    "target": "ES2017",
+    "module": "none",
+    "lib": ["ES2017", "DOM"],
+    "strict": true,
+    "noImplicitAny": true,
+    "outDir": "build",
+    "removeComments": false
+  },
+  "include": ["src/main.ts"]
+}
